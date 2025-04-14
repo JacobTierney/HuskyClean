@@ -1,0 +1,4 @@
+<launch>
+<node name="number_array_subscriber" pkg="project" type="serial_com.py" output="screen"/>
+<node name="LiDAR_Control" pkg="project" type="ob_save3.py" output="screen"/>
+<launch>
