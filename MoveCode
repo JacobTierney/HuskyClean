@@ -1,0 +1,209 @@
+/*
+  Last updated: 3/10/25
+  Husky Clean Final Autonomous code
+   
+  RC Remote Car
+  fsi6x-RC-car-spin.ino
+  Uses Flysky FS-I6X RC receiver & FS-I6X 6-ch Controller
+  Uses TB6612FNG H-Bridge Motor Controller
+  Drives two DC Motors
+*/
+
+#include <IBusBM.h>
+
+IBusBM ibus;
+
+int rcCH5 = 0;
+int rcCH6 = 0;
+
+#define DirS1 8 
+#define DirS2 9 
+#define DirF 10
+#define pwmAR 2 //right
+#define pwmAL 3
+#define ENAR 53
+#define ENAL 52
+#define Ra_i 6
+#define La_i 50
+#define pwmBR 4
+#define pwmBL 5
+#define ENBR 49
+#define ENBL 48
+#define Rb_i 42
+#define Lb_i 51
+#define servo 7
+
+int MotorSpeedAF = 0;
+int MotorSpeedBF = 0;
+int MotorSpeedAR = 0;
+int MotorSpeedBR = 0;
+int FluidDir = 0;
+int MotorScrub = 0;
+int start = 0;
+int shut = 0;
+int piss = 0;
+int command[2];
+int Speed[10];
+
+void mControlA(int MotorSpeedF, int MotorSpeedR) {
+    analogWrite(pwmAR, MotorSpeedF);
+    analogWrite(pwmAL, MotorSpeedR);
+}
+
+void mControlB(int MotorSpeedF, int MotorSpeedR) {
+    analogWrite(pwmBR, MotorSpeedF);
+    analogWrite(pwmBL, MotorSpeedR);
+}
+
+void scrubcontrols(int mdir) {
+    digitalWrite(DirS1, mdir);
+    digitalWrite(DirS2, mdir);
+} 
+
+void fluidControl(int mdir) {
+    if(piss %  10 == 0){ // change this counter to change frequency of pump
+    digitalWrite(DirF, mdir);
+    }else{
+    digitalWrite(DirF, LOW);     
+    }
+    piss = piss + 1; 
+}
+
+int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue) {
+    uint16_t ch = ibus.readChannel(channelInput);
+    if (ch < 100) return defaultValue;
+    return map(ch, 1000, 2000, minLimit, maxLimit);
+}
+
+bool readSwitch(byte channelInput, bool defaultValue) {
+    int intDefaultValue = defaultValue ? 100 : 0;
+    int ch = readChannel(channelInput, 0, 100, intDefaultValue);
+    return (ch > 50);
+} 
+
+void setup() {
+    Serial.begin(115200);
+    while (!Serial) {
+      
+    }
+    Serial.println("Booting Up...");
+    ibus.begin(Serial1);
+
+    pinMode(pwmAR, OUTPUT);
+    pinMode(pwmAL, OUTPUT);
+    pinMode(pwmBR, OUTPUT);
+    pinMode(pwmBL, OUTPUT);
+    pinMode(ENAR, OUTPUT);
+    pinMode(ENAL, OUTPUT);
+    pinMode(ENBR, OUTPUT);
+    pinMode(ENBL, OUTPUT);
+    pinMode(DirF, OUTPUT);
+    pinMode(DirS1, OUTPUT);
+    pinMode(DirS2, OUTPUT);
+    pinMode(Ra_i, OUTPUT);
+    pinMode(La_i, OUTPUT);
+    pinMode(Rb_i, OUTPUT);
+    pinMode(Lb_i, OUTPUT);
+    pinMode(servo, OUTPUT);
+
+    digitalWrite(Ra_i, LOW);
+    digitalWrite(La_i, LOW);
+    digitalWrite(ENAR, HIGH);
+    digitalWrite(ENAL, HIGH);
+    digitalWrite(Rb_i, LOW);
+    digitalWrite(Lb_i, LOW);
+    digitalWrite(ENBR, HIGH);
+    digitalWrite(ENBL, HIGH);
+    
+    delay(2000);
+    Serial.println("Serial is working");
+}
+
+void loop() {
+    // Read RC channels
+    rcCH5 = readChannel(4, -100, 100, 0);
+    rcCH6 = readChannel(5, -100, 100, 0);
+
+    // Set start and shut bits based on RC input
+    start = (rcCH5 > 30) ? 1 : 0;
+    shut = (rcCH6 > 30) ? 1 : 0;
+
+    // Send start and shut bits to Raspberry Pi
+    Serial.print("Flysky:");
+    Serial.print(start);
+    Serial.print(",");
+    Serial.println(shut);
+
+    // Read incoming array from Raspberry Pi
+    if (Serial.available() > 0) {
+        String Motor_Speed = Serial.readStringUntil('\n');
+        int index = 0;
+        int lastComma = -1;
+        for (int i = 0; i < Motor_Speed.length(); i++) {
+            if (Motor_Speed[i] == ',' || i == Motor_Speed.length() - 1) {
+                String numStr = Motor_Speed.substring(lastComma + 1, i + 1);
+                if (index < 10) { // Prevent out-of-bounds
+                    Speed[index++] = numStr.toInt();
+                }
+                lastComma = i; 
+            }
+        }
+
+        // Print the received array back to serial
+        Serial.print("Received Array: ");
+        for (int i = 0; i < index; i++) {
+            Serial.print(Speed[i]);
+            if (i < index - 1) {
+                Serial.print(", ");
+            }
+        }
+        Serial.println();
+    }
+
+    // Motor control logic based on received array
+    MotorSpeedAF = 0;
+    MotorSpeedAR = 0;
+    MotorSpeedBF = 0;
+    MotorSpeedBR = 0;
+    
+    if (Speed[0] == 1) {
+        MotorSpeedAF = 0;
+        MotorSpeedAR = 35;
+        MotorSpeedBF = 35;
+        MotorSpeedBR = 0;
+    } //left 
+    else if (Speed[1] == 1) {
+        MotorSpeedAF = 30;
+        MotorSpeedAR = 0;
+        MotorSpeedBF = 30;
+        MotorSpeedBR = 0; 
+    }// right
+    else if (Speed[2] == 1) {
+        MotorSpeedAF = 0;
+        MotorSpeedAR = 30;
+        MotorSpeedBF = 0;
+        MotorSpeedBR = 30; 
+    }
+
+    if (start == 1){
+      digitalWrite(servo, HIGH);
+    } else{
+      digitalWrite(servo, LOW);
+    }
+
+    MotorSpeedAF = constrain(MotorSpeedAF, 0, 255);
+    MotorSpeedAR = constrain(MotorSpeedAR, 0, 255);
+    MotorSpeedBF = constrain(MotorSpeedBF, 0, 255);
+    MotorSpeedBR = constrain(MotorSpeedBR, 0, 255);
+    MotorScrub = Speed[4];
+    FluidDir = Speed[5];
+
+
+    // Uncomment these lines to control the motors
+     mControlA(MotorSpeedAF, MotorSpeedAR);
+     mControlB(MotorSpeedBF, MotorSpeedBR);
+     scrubcontrols(MotorScrub);
+     fluidControl(FluidDir);
+
+    delay(200);
+}
